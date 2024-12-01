@@ -105,6 +105,7 @@ def get_conversational_chain(retrieval_chain, user_question, top_k, top_p, tempe
         time.sleep(0.05)
 
     response_container.write("Reply: " + response_text)
+    return response_text
 
 
 def user_input(user_question, top_k, top_p, temperature):
@@ -119,7 +120,7 @@ def user_input(user_question, top_k, top_p, temperature):
         "This tool is to give answer to queries from the pdf",
     )
 
-    get_conversational_chain(retrieval_chain, user_question, top_k, top_p, temperature)
+    return get_conversational_chain(retrieval_chain, user_question, top_k, top_p, temperature)
 
 
 def extract_questions(question_bank_files):
@@ -168,28 +169,25 @@ def main():
     
     elif choice == "Chat":
         if "username" in st.session_state:
-            st.write(f"Logged in as {st.session_state['username']}")
+            st.subheader(f"Welcome, {st.session_state['username']}!")
             
             with st.sidebar:
-                st.title("Menu:")
+                st.title("Settings:")
+                
                 is_handwritten = st.checkbox("Handwritten notes?")
+                
                 global is_elaborate
                 is_elaborate = st.checkbox("Detailed answer?")
+                
                 pdf_doc = st.file_uploader(
                     "Upload your PDF/Image Files and Click on the Submit & Process Button",
                     accept_multiple_files=True,
                 )
+                
                 question_bank = st.file_uploader(
                     "Upload Question Bank (PDF/Text)", accept_multiple_files=False
                 )
-                if question_bank:
-                    st.info("Extracting questions from the question bank...")
-                    questions = extract_questions([question_bank])
-                    st.session_state["questions"] = questions
-                    st.success("Questions Extracted Successfully!")
-                else:
-                    st.session_state["questions"] = []
-                    st.warning("No question bank uploaded. You can still ask custom questions.")
+                
                 if st.button("Submit & Process"):
                     with st.spinner("Processing..."):
                         if is_handwritten:
@@ -202,38 +200,54 @@ def main():
                         text_chunks = get_chunks(raw_text)
                         vector_store(text_chunks)
                         st.success("Processing Completed!")
-
-                cret = st.slider("creativity values", min_value = 0, max_value = 2, value = 1)
-
-            top_k = creativity[cret][0]
-            top_p = creativity[cret][1]
-            temperature = creativity[cret][2]
-
-            questions = st.session_state.get("questions", [])
-            st.subheader("Ask Questions:")
-            
-            
-            
-            
-            # if any error its probably here
-            # 
             
             if question_bank:
-                selected_question = st.selectbox(
-                    "Select a question to get an answer:", [""] + questions
-                )
-                if selected_question:
-                    response = user_input(selected_question, top_k, top_p, temperature)
-                    save_query(st.session_state["username"], selected_question, response)
-                    
-            user_question = st.text_input("Ask a Question from the PDF Files")
-            
-            if user_question:
-                response = user_input(user_question, top_k, top_p, temperature)
-                save_query(st.session_state["username"], user_question, response)
-                
-            # todo 
+                    questions = extract_questions([question_bank])
+                    st.session_state["questions"] = questions
+                    st.success("Questions extracted successfully!")
+
+                    if st.button("Submit & Process"):
+                        with st.spinner("Processing..."):
+                            if is_handwritten:
+                                st.info("Performing OCR on handwritten notes...")
+                                raw_text = perform_ocr(pdf_doc)
+                            else:
+                                st.info("Reading text from PDFs...")
+                                raw_text = pdf_read(pdf_doc)
+
+                            text_chunks = get_chunks(raw_text)
+                            vector_store(text_chunks)
+                            st.success("Processing Completed!")
+            cret = st.sidebar.slider("creativity values", min_value = 0, max_value = 2, value = 1)
+            top_k = creativity[cret][0]
+            top_p = creativity[cret][1]
+            temperature = creativity[cret][2]                       
+
             # Display chat history
+            st.subheader("Chat History")
+            chat_history = get_user_history(st.session_state["username"])
+            if chat_history:
+                for entry in chat_history:
+                    st.write(f"*Q:* {entry['question']}")
+                    st.write(f"*A:* {entry['answer']}")
+            else:
+                st.info("No chat history available.")
+                
+            st.subheader("Ask Questions")
+            questions = st.session_state.get("questions", [])
+            if questions:
+                selected_question = st.selectbox("Select a question:", [""] + questions)
+                if selected_question:
+                    response = user_input(selected_question, 50, 0.5, 0.7)
+                    save_query(st.session_state["username"], selected_question, response)
+
+            user_question = st.text_input("Or ask your own question")
+            if user_question:
+                response = user_input(user_question, 50, 0.5, 0.7)
+                save_query(st.session_state["username"], user_question, response)
+                st.write(f"*Q:* {user_question}")
+                st.write(f"*A:* {response}")
+            
     else:
         st.error("Please log in to use the chat application.")             
 
